@@ -114,9 +114,10 @@ if nvcc_cuda_version < Version("11.8"):
 
 # Add target compute capabilities to NVCC flags.
 for capability in compute_capabilities:
-    num = capability[0] + capability[2]
+    capability = capability.split(".")
+    num = capability[0] + capability[1]
     NVCC_FLAGS += ["-gencode", f"arch=compute_{num},code=sm_{num}"]
-    if capability.endswith("+PTX"):
+    if capability[-1].endswith("+PTX"):
         NVCC_FLAGS += ["-gencode", f"arch=compute_{num},code=compute_{num}"]
 
 # Use NVCC threads to parallelize the build.
