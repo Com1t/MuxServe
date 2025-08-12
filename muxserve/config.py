@@ -19,6 +19,7 @@ class JobConfig:
                  placement: List[List[int]],
                  mps_percentage: List[int],
                  max_num_seqs: int,
+                max_model_len: int,
                  model_dtype: torch.dtype = torch.float16):
         self.name = name
         self.model = model
@@ -27,6 +28,7 @@ class JobConfig:
         self.placement = placement
         self.mps_percentage = mps_percentage
         self.max_num_seqs = max_num_seqs
+        self.max_model_len = max_model_len
         self.model_dtype = model_dtype
 
 

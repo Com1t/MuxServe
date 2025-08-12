@@ -24,6 +24,7 @@ def launch_flexserver_process(model_id,
                               split_by_model,
                               max_num_batched_tokens,
                               max_num_seqs,
+                              max_model_len,
                               is_prefill=False,
                               ray_address=None,
                               runtime_profile=False,
@@ -47,6 +48,7 @@ def launch_flexserver_process(model_id,
           f"--max-num-seqs {max_num_seqs} " \
           f"--flexstore-port {flexstore_port} --workload-file {workload_file} " \
           f"--mps-percentage {mps_percentage} {prefill_option} {split_option} " \
+          f"--max-model-len {max_model_len} " \
           f"{runtime_profile_option} "
 
     proc_env = copy.deepcopy(os.environ)

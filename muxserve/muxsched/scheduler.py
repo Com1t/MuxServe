@@ -20,7 +20,7 @@ from muxserve.constants import (SM_HOLD_NAME_FMT, ADD_REQ_NAME_FMT,
                               RET_REQ_NAME_FMT, PREEMPT_REQ_NAME_FMT)
 from muxserve.flexserver.pipeworker import PipeWorker
 from muxserve.muxsched.launcher import launch_flexserver_process
-from muxserve.muxsched.resource import SMResource, SMPart
+from muxserve.muxsched.resource_uiils import SMResource, SMPart
 from muxserve.muxsched.workload_utils import get_workload, Workload, Request
 from muxserve.shm_utils import (create_shared_var, read_shared_var,
                               write_shared_var, dump_to_shared_var,
@@ -199,6 +199,7 @@ class MuxScheduler:
                         self.muxserve_config.max_num_batched_tokens,
                         # self.muxserve_config.max_num_seqs,
                         job_config.max_num_seqs,
+                        job_config.max_model_len,
                         is_prefill=is_prefill,
                         ray_address=ray_address,
                         schedule_approach=self.muxserve_config.schedule_approach)

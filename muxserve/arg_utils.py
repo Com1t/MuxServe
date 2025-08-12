@@ -23,6 +23,7 @@ class MuxServeArgs:
     gpu_memory_utilization: float = 0.90
     max_num_batched_tokens: Optional[int] = None
     max_num_seqs: int = 256
+    max_model_len: int = 1024
     muxserve_host: str = "127.0.0.1"
     flexstore_port: int = 50051
     server_port: int = 50060
@@ -77,6 +78,10 @@ class MuxServeArgs:
                             type=int,
                             default=MuxServeArgs.max_num_seqs,
                             help='maximum number of sequences per iteration')
+        parser.add_argument('--max-model-len',
+                            type=int,
+                            default=MuxServeArgs.max_model_len,
+                            help='maximum model length')
         parser.add_argument('--muxserve-host',
                             type=str,
                             default=MuxServeArgs.muxserve_host,
@@ -165,6 +170,7 @@ class MuxServeArgs:
             model_config = yaml.safe_load(f)
         # overwrite max_num_seqs
         self.max_num_seqs = model_config["max_num_seqs"]
+        self.max_model_len = model_config["max_model_len"]
         self.overload_threshold = model_config["overload_threshold"]
         self.gpu_memory_utilization = model_config["gpu_memory_utilization"]
         num_gpus = model_config["num_gpus"]
@@ -190,6 +196,8 @@ class MuxServeArgs:
                 mps_percentage=model["mps_percentage"],
                 max_num_seqs=getattr(model, "max_num_seqs",
                                      model_config["max_num_seqs"]),
+                max_model_len=getattr(model, "max_model_len",
+                                      model_config["max_model_len"]),
                 model_dtype=DTYPE_MAP[model["model_dtype"]],
             )
             if self.split_by_model is not None:
