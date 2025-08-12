@@ -19,8 +19,8 @@ import pickle
 import os
 
 DEFAULT_WARMUP = 10
-DEFAULT_DATASET_PATH = "/mnt/afs/dmhj/datasets/ShareGPT_V3_unfiltered_cleaned_split.json"
-DEFAULT_TOKENIZER_PATH = "/mnt/afs/share/LLMCKPTs/huggyllama/llama-7b"
+DEFAULT_DATASET_PATH = "/home/mona/work/ShareGPT/ShareGPT_V3_unfiltered_cleaned_split.json"
+DEFAULT_TOKENIZER_PATH = "/home/mona/work/llmckpt/llama-7b"
 eps = 1e-6
 
 

@@ -43,6 +43,10 @@ def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
 
 def update_parameters(model: nn.Module, data: Dict[str, dict]):
     for param_name, param in model.named_parameters():
+        # Special handling for llama3: lm_head.weight shares with embed_tokens.weight
+        if param_name == "lm_head.weight":
+            # Point lm_head.weight to embed_tokens.weight
+            param_name = "model.embed_tokens.weight"
         cuda_tensor = rebuild_cuda_tensor(torch.Tensor, **(data[param_name]))
         assert param.shape == cuda_tensor.shape
         assert cuda_tensor.is_cuda

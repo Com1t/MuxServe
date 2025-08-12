@@ -42,7 +42,7 @@ def _init_distributed_environment(
             or parallel_config.pipeline_parallel_size
             == 1), "Support one parallelism only!"
     rank = int(os.getenv("RANK", "-1"))
-    local_rank = int(os.getenv("LOCAL_RANK", "0"))
+    local_rank = int(os.getenv("RANK", "0"))
     device = torch.device(f"cuda:{local_rank}")
     torch.cuda.set_device(device)
 
