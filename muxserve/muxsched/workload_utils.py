@@ -19,8 +19,8 @@ import pickle
 import os
 
 DEFAULT_WARMUP = 10
-DEFAULT_DATASET_PATH = "/home/mona/work/ShareGPT/ShareGPT_V3_unfiltered_cleaned_split.json"
-DEFAULT_TOKENIZER_PATH = "/home/mona/work/llmckpt/llama-7b"
+DEFAULT_DATASET_PATH = "/home/fuchiang/work/ShareGPT/ShareGPT_V3_unfiltered_cleaned_split.json"
+DEFAULT_TOKENIZER_PATH = "/home/fuchiang/work/llmckpt/Llama-3.2-1B"
 eps = 1e-6
 
 
@@ -515,15 +515,15 @@ def sample_requests(
     filtered_dataset: List[Tuple[str, int, int]] = []
     for prompt, prompt_token_id, output_len in tokenized_dataset:
         prompt_len = len(prompt_token_id)
-        if prompt_len < 4 or output_len < 4:
+        if prompt_len < 16 or output_len < 16:
             # Prune too short sequences.
             # This is because TGI causes errors when the input or output length
             # is too short.
             continue
-        if prompt_len > 1024 or prompt_len + output_len > 2048:
+        total_len = prompt_len + output_len
+        if prompt_len > 1024 or total_len > 1024:
             # Prune too long sequences.
             continue
-        total_len = prompt_len + output_len
         if total_len < min_seq_len or total_len > max_seq_len:
             continue
         filtered_dataset.append((prompt_token_id, prompt_len, output_len))
@@ -543,17 +543,19 @@ def generate_workload_requests(num_requests: int,
         output_lens = [output_len] * num_requests
     elif distribution == "uniform":
         prompt_lens = np.random.uniform(prompt_len // 2,
-                                        prompt_len + prompt_len // 2,
+                                        prompt_len,
                                         size=num_requests)
         output_lens = np.random.uniform(output_len // 2,
-                                        output_len + output_len // 2,
+                                        output_len,
                                         size=num_requests)
+    print(f"Sample {num_requests} requests with prompt len {prompt_len}, output len {output_len}")
     request_datasets = []
     for i in range(num_requests):
         cur_prompt_len = int(prompt_lens[i])
         cur_output_len = int(output_lens[i])
-        prompt = np.random.randint(0, 24000, size=cur_prompt_len).tolist()
-        prompt = tokenizer.decode(prompt)
+        print(f"Request {i}: prompt len {cur_prompt_len}, output len {cur_output_len}, total len {cur_prompt_len + cur_output_len}")
+        vocab_size = len(tokenizer) if hasattr(tokenizer, "__len__") else tokenizer.vocab_size
+        prompt = np.random.randint(0, vocab_size, size=cur_prompt_len).tolist()
         request_datasets.append((prompt, cur_prompt_len, cur_output_len))
     return request_datasets
 
@@ -574,12 +576,6 @@ def sample_request_datas(
                                seqlen_distribution,
                                tokenized_cache_path=tokenized_cache_path)
 
-    # # fill requests
-    # requests_data = []
-    # for i, request in enumerate(requests):
-    #     # encode the prompt
-    #     prompt_tokens = tokenizer(request[0]).input_ids
-    #     requests_data.append((prompt_tokens, request[1], request[2]))
     return requests
 
 
@@ -610,65 +606,49 @@ def get_workload(
             process = DeterministicProcess
         else:
             raise ValueError(f"Unknown arrival process: {distribution}")
+        # generate the workload requests structure
         w = process(arrival_rate).generate_workload(model_name,
                                                     start=start,
                                                     duration=duration,
                                                     num_requests=nreq,
                                                     seed=seed)
-        if sampled_requests is not None:
-            for req_idx in range(len(w)):
-                w.requests[req_idx].data = sampled_requests[i][req_idx]
 
-        if prompt_lens is not None and output_lens is not None:
+        if sampled_requests is not None:
+            for req_idx in range(nreq):
+                w.requests[req_idx].data = sampled_requests[i][req_idx]
+        else:
+            assert prompt_lens is not None and output_lens is not None, "Specify prompt and output lengths when not using ShareGPT"
             if isinstance(prompt_lens, int):
                 prompt_len = prompt_lens
                 output_len = output_lens
             else:
                 prompt_len = prompt_lens[i]
                 output_len = output_lens[i]
-            print(f"Replace {model_name} workload with prompt {prompt_len} "
+            print(f"Synthesize {model_name} workload with prompt {prompt_len} "
                   f"output {output_len} distribution {prompt_distribution}")
-            w = replace_long_workloads(w,
-                                       tokenizer_path,
-                                       prompt_len,
-                                       output_len,
-                                       distribution=prompt_distribution)
+            tokenizer = get_tokenizer(tokenizer_path)
+            workload_reqs = generate_workload_requests(nreq,
+                                                       prompt_len,
+                                                       output_len,
+                                                       tokenizer,
+                                                       distribution=prompt_distribution)
+            for i in range(nreq):
+                w.requests[i].data = workload_reqs[i]
+
         workloads.append(w)
         seed += random.randint(1, 100)
+        prompt_lens_list = [r.data[1] for r in w.requests]
+        output_lens_list = [r.data[2] for r in w.requests]
+        print(
+            f"Generated workload for model {model_name}, {nreq} requests, \n"
+            f"prompt lens: avg={np.mean(prompt_lens_list):.2f}, "
+            f"max={np.max(prompt_lens_list)}, min={np.min(prompt_lens_list)}; \n"
+            f"output lens: avg={np.mean(output_lens_list):.2f}, "
+            f"max={np.max(output_lens_list)}, min={np.min(output_lens_list)}"
+        )
 
     workload = Workload.merge(*workloads)
 
-    if sampled_requests is None:
-        # sample requests to fill the workload
-        tokenizer = get_tokenizer(tokenizer_path)
-        requests = sample_requests(len(workload),
-                                   tokenizer,
-                                   dataset_path,
-                                   tokenized_cache_path=tokenized_cache_path)
-
-        # fill requests
-        for i, request in enumerate(requests):
-            # # encode the prompt
-            # prompt_tokens = tokenizer(request[0]).input_ids
-            workload.requests[i].data = request
-    return workload
-
-
-def replace_long_workloads(workload,
-                           tokenizer_path,
-                           prompt_len,
-                           output_len,
-                           distribution: str = "fixed"):
-    tokenizer = get_tokenizer(tokenizer_path)
-    num_requests = len(workload)
-    workload_reqs = generate_workload_requests(num_requests,
-                                               prompt_len,
-                                               output_len,
-                                               tokenizer,
-                                               distribution=distribution)
-
-    for i in range(num_requests):
-        workload.requests[i].data = workload_reqs[i]
     return workload
 
 
@@ -676,9 +656,9 @@ def generate_workload(
     workload_infos,
     output_file,
     num_requests=1500,
-    sampled_requests=None,
     start=0,
     duration=2000,
+    synthesize=False,
     distribution="poisson",
     prompt_distribution=None,
     use_share_gpt=True,
@@ -693,6 +673,16 @@ def generate_workload(
         num_requests = [num_requests] * len(workload_infos)
     models = [model for model, _ in workload_infos]
     arrival_rates = [rate for _, rate in workload_infos]
+
+    sampled_requests = None
+    if synthesize is False:
+        max_rate = max(arrival_rates)
+        sampled_requests = []
+        for i in range(len(arrival_rates)):
+            cur_num_requests = int(arrival_rates[i] * num_requests[i] * 1.1 /
+                                    max_rate)
+            sampled_requests.append(sample_request_datas(cur_num_requests, dataset))
+
     w = get_workload(models,
                      arrival_rates,
                      start,
@@ -744,14 +734,14 @@ if __name__ == "__main__":
     # parser.add_argument("--model", type=str, default="llama-7b")
     parser.add_argument("--uneven_distribution", type=bool, default=False)
     parser.add_argument("--workload_info_from_yaml", type=bool, default=False)
+    parser.add_argument("--synthesize", type=bool, default=False, help="whether to synthesize the workload, or sample from ShareGPT")
     parser.add_argument("--dataset-source", type=str, default="/mnt/afs/lurunyu/data/ShareGPT_V3_unfiltered_cleaned_split.json", help="the dataset source, like sharedgpt")
     parser.add_argument("--model-yaml", type=str, default="examples/basic/models.yaml", help="the model yaml to generate the workload, refer to `examples/basic/models.yaml`")
     parser.add_argument("--output-file", type=str, default=None, help="the dataset source, like sharedgpt")
     args = parser.parse_args()
 
     dataset = args.dataset_source
-    # num_requests = 1000
-    num_requests = 200
+    num_requests = 1000
     start = 0
     # limit the maximum arrival duration to 1000 seconds
     duration = 1000
@@ -766,11 +756,11 @@ if __name__ == "__main__":
         prompt_len = 768
         output_len = 256
 
+    synthesize = args.synthesize
     uneven_distribution = args.uneven_distribution
     workload_info_from_yaml = args.workload_info_from_yaml
 
     if workload_info_from_yaml:
-        # models_yaml = "/mnt/afs/dmhj/repo/MuxServe/benchmark/end_to_end/models.yaml"
         models_yaml = args.model_yaml
         workload_infos = get_workloads_info_from_yaml(models_yaml)
         print(f"get workload info from {models_yaml}:\n{workload_infos}")
@@ -779,12 +769,6 @@ if __name__ == "__main__":
 
         # first sample requests for each model
         max_rate = max(rate_dist)
-        sampled_requests = []
-        for i in range(len(rate_dist)):
-            cur_num_requests = int(rate_dist[i] * num_requests * 1.1 /
-                                   max_rate)
-            sampled_requests.append(
-                sample_request_datas(cur_num_requests, dataset))
 
         capped_num_requests = min(num_requests, int(max_rate * duration))
         num_requests_dist = [capped_num_requests]
@@ -801,6 +785,7 @@ if __name__ == "__main__":
                           num_requests=num_requests_dist,
                           start=start,
                           duration=duration,
+                          synthesize=synthesize,
                           distribution=distribution,
                           prompt_distribution=prompt_distribution,
                           use_share_gpt=use_share_gpt,
@@ -815,12 +800,6 @@ if __name__ == "__main__":
 
         # first sample requests for each model
         max_rate = max(rate_dist)
-        sampled_requests = []
-        for i in range(len(rate_dist)):
-            cur_num_requests = int(rate_dist[i] * num_requests * 1.1 /
-                                   max_rate)
-            sampled_requests.append(
-                sample_request_datas(cur_num_requests, dataset))
 
         capped_num_requests = min(num_requests, int(max_rate * duration))
         num_requests_dist = [capped_num_requests]
@@ -836,7 +815,6 @@ if __name__ == "__main__":
         generate_workload(workload_infos,
                           output_file,
                           num_requests=num_requests_dist,
-                          sampled_requests=sampled_requests,
                           start=start,
                           duration=dispatch_duration,
                           distribution=distribution,
@@ -848,15 +826,10 @@ if __name__ == "__main__":
         # num_models = 4
         num_models = 1
         seqlen_distributions = None  #[(0, 300), (300, 600), (600, np.inf)]
-        sampled_requests = []
         for i in range(num_models):
             seqlen_dist = None
             if seqlen_distributions is not None:
                 seqlen_dist = seqlen_distributions[i]
-            sampled_requests.append(
-                sample_request_datas(num_requests,
-                                     dataset,
-                                     seqlen_distribution=seqlen_dist))
 
         for rate in [11]:
             workload_infos = [(f"llm-{model_id}", rate)
@@ -870,7 +843,6 @@ if __name__ == "__main__":
             generate_workload(workload_infos,
                               output_file,
                               num_requests=num_requests,
-                              sampled_requests=sampled_requests,
                               start=start,
                               duration=duration,
                               distribution=distribution,
