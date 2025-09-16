@@ -333,8 +333,7 @@ class FlexStoreManager:
         self.config = muxserve_config
         self.port = self.config.flexstore_port
 
-        # FIXME: we use 128 currently, but it should be configurable.
-        self.head_size = 128
+        self.head_size = self.config.head_size
         self.block_size = self.config.block_size
 
         use_openmpi = os.environ.get("OMPI_COMM_WORLD_SIZE", None) is not None
@@ -351,10 +350,6 @@ class FlexStoreManager:
             rank = int(os.environ.get('PMI_RANK', 0))
             world_size = int(os.environ.get('PMI_SIZE', 1))
         else:
-            # local_rank = int(os.environ.get('LOCAL_RANK', 0))
-            # local_world_size = int(os.environ.get('LOCAL_WORLD_SIZE', 1))
-            # rank = int(os.environ.get('RANK', 0))
-            # world_size = int(os.environ.get('WORLD_SIZE', 1))
             local_rank = int(os.environ.get('LOCAL_RANK', 0))
             local_world_size = self.config.nproc_per_node
             rank = self.config.node_rank
@@ -450,7 +445,7 @@ class FlexStoreManager:
 
         block_mem = 2 * (np.prod(self.get_key_block_shape()) +
                          np.prod(self.get_value_block_shape()))
-        max_num_blocks = (avaliable_mem_each_gpu // block_mem // 128) * 128
+        max_num_blocks = (avaliable_mem_each_gpu // block_mem // self.head_size) * self.head_size
         return max_num_blocks
 
     def get_key_block_shape(self, element_size=2) -> Tuple[int, int, int]:
@@ -891,7 +886,7 @@ def get_dtype_size(dtype: torch.dtype) -> int:
 
 
 def get_tensor_metadata(tensor: torch.Tensor) -> Dict:
-    storage = tensor.storage()
+    storage = tensor.untyped_storage()
     t = storage._share_cuda_()
     return {
         "tensor_size": tensor.size(),

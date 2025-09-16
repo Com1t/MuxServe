@@ -1,5 +1,6 @@
 import torch
 from typing import List, Dict, Any
+from transformers import AutoConfig
 
 
 class JobConfig:
@@ -19,7 +20,7 @@ class JobConfig:
                  placement: List[List[int]],
                  mps_percentage: List[int],
                  max_num_seqs: int,
-                max_model_len: int,
+                 max_model_len: int,
                  model_dtype: torch.dtype = torch.float16):
         self.name = name
         self.model = model
@@ -80,8 +81,15 @@ class MuxServeConfig:
         self.master_addr = master_addr
         self.master_port = master_port
 
-        self.head_size = 128
-
+        head_size = 0
         self.num_runtime_processes = 0
         for job_config in self.job_configs:
+            model_config = AutoConfig.from_pretrained(job_config.model)
+            cur_head_size = model_config.hidden_size // model_config.num_attention_heads
+            if head_size == 0:
+                head_size = cur_head_size
+            if cur_head_size != head_size and head_size != 0:
+                raise ValueError("All models must have the same head size.")
             self.num_runtime_processes += len(job_config.mps_percentage)
+
+        self.head_size = head_size
