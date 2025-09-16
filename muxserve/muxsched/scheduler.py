@@ -106,6 +106,7 @@ class MuxScheduler:
         self.wait_for_cache: Dict[str, bool] = {}
         self.prefill_cannot_schedule: Dict[str, bool] = {}
         self.max_num_seqs: Dict[str, int] = {}
+        self.max_model_len: Dict[str, int] = {}
         self.hist_num_seqs: Dict[str, List[int]] = {}
 
         self.shm_size = 6
@@ -165,6 +166,7 @@ class MuxScheduler:
             self._name_to_model[model_name] = job_config.model
             self.pipeline_parallel_size = job_config.pipeline_parallel_size
             self.max_num_seqs[model_name] = job_config.max_num_seqs
+            self.max_model_len[model_name] = job_config.max_model_len
             self.hist_num_seqs[model_name] = []
             assert len(job_config.mps_percentage) == 2
             for i, mps_percentage in enumerate(job_config.mps_percentage):
@@ -340,6 +342,9 @@ class MuxScheduler:
             request = workload.requests[i]
             if request.model_name not in self._served_models:
                 continue
+            assert (request.data[1] + request.data[2]) <= self.max_model_len[request.model_name], \
+                f"Request {request.idx} for model {request.model_name} is too long, " \
+                f"input {request.data[1] + request.data[2]} > max len {self.max_model_len[request.model_name]}"
             self._workload_queue.put_nowait((arrival_time, request))
             total_num_requests += 1
         # we use a counter to track the number of requests status
