@@ -3,7 +3,6 @@ import numpy as np
 from typing import Dict, List, Tuple
 
 import torch
-from transformers import AutoConfig
 from muxserve.config import MuxServeConfig
 
 
@@ -78,60 +77,3 @@ class SMResource:
     @property
     def num_overloaded_sms(self):
         return len(self._sm_parts) - len(self.unoverloaded_sms)
-
-
-class CacheResource:
-
-    def __init__(self, muxserve_config: MuxServeConfig):
-        self.config = muxserve_config
-
-        self.block_size = self.config.block_size
-        self.head_size = 128
-        self.num_blocks = self.get_num_gpu_blocks()
-
-        # alloc info
-        self.free_blocks = self.num_blocks
-        self.request_blocks: Dict[str, Tuple[int, int]] = {}
-
-        # job info
-        self.model_blocks = {}
-        for job_config in self.config.job_configs:
-            model_config = AutoConfig.from_pretrained(job_config.model)
-            # FIXME: single card currently
-            assert job_config.tensor_parallel_size == 1, "tensor parallel is not supported"
-            num_heads = model_config.num_attention_heads
-            num_layers = model_config.num_hidden_layers
-            self.model_blocks[model_config.model] = num_heads * num_layers
-
-    def get_num_gpu_blocks(self) -> int:
-        # TODO: compute
-        total_mem_each_gpu = get_gpu_memory()  # get info from gpu0
-        # FIXME: set gpu_memory_utilization in shell script manually
-        avaliable_mem_each_gpu = self.config.gpu_memory_utilization * total_mem_each_gpu
-        avaliable_mem_each_gpu = round(avaliable_mem_each_gpu) - 1
-
-        block_mem = 2 * (np.prod(self.get_key_block_shape()) +
-                         np.prod(self.get_value_block_shape()))
-        max_num_blocks = (avaliable_mem_each_gpu // block_mem // 128) * 128
-        return max_num_blocks
-
-    def get_key_block_shape(self, element_size=2) -> Tuple[int, int, int]:
-        x = 16 // element_size
-        return (
-            self.head_size // x,
-            self.block_size,
-            x,
-        )
-
-    def get_value_block_shape(self) -> Tuple[int, int]:
-        return (
-            self.head_size,
-            self.block_size,
-        )
-
-    def allocate(self, model: str, num_tokens: int):
-        num_blocks = (num_tokens + self.block_size - 1) // self.block_size
-        num_blocks = num_blocks * self.model_blocks[model]
-
-    def append_slot(self, model: str):
-        pass
