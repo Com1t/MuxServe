@@ -55,7 +55,7 @@ def _init_distributed_environment(
                 f"({torch_world_size} vs. {parallel_config.world_size}).")
     else:
         torch.distributed.init_process_group(
-            backend="nccl",
+            backend="gloo",
             world_size=parallel_config.world_size,
             rank=rank,
             init_method=distributed_init_method,
