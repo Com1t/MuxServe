@@ -8,7 +8,7 @@ from typing import Optional
 
 from muxserve.config import JobConfig, MuxServeConfig
 
-DTYPE_MAP = {"fp16": torch.float16}
+DTYPE_MAP = {"fp16": torch.float16, "bf16": torch.bfloat16}
 
 
 @dataclass

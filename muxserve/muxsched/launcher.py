@@ -1,10 +1,12 @@
 import os
 import copy
+import torch
 import subprocess
 from muxserve.logger import get_logger
 
 logger = get_logger()
 
+DTYPE_REV_MAP = {"torch.float16": "float16", "torch.bfloat16": "bfloat16"}
 
 def launch_flexserver_process(model_id,
                               name,
@@ -25,6 +27,7 @@ def launch_flexserver_process(model_id,
                               max_num_batched_tokens,
                               max_num_seqs,
                               max_model_len,
+                              dtype,
                               is_prefill=False,
                               ray_address=None,
                               runtime_profile=False,
@@ -41,7 +44,8 @@ def launch_flexserver_process(model_id,
           f"--master-port {master_port} " \
           f"muxserve/flexserver/muxserve_server.py " \
           f"--model-id {model_id} --model-name {name} " \
-          f"--model {model} --tensor-parallel-size {tensor_parallel_size} " \
+          f"--model {model} --dtype {DTYPE_REV_MAP[str(dtype)]} " \
+          f"--tensor-parallel-size {tensor_parallel_size} " \
           f"--pipeline-parallel-size {pipeline_parallel_size} " \
           f"--block-size {block_size} --swap-space 1 " \
           f"--max-num-batched-tokens {max_num_batched_tokens} " \

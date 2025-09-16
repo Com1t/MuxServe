@@ -96,8 +96,11 @@ class MuxScheduler:
 
         # schedule queues
         self.lock = asyncio.Lock()
+        # running, waiting for running
         self.running: Dict[str, List[Request]] = {}
+        # executing, already running (move from running)
         self.executing: Dict[str, Set[int]] = {}
+        # waiting, requests that waiting are waiting for schedule
         self.waiting: Dict[str, List[Request]] = {}
         self._preempted: Dict[str, List[Request]] = {}
         self.wait_for_cache: Dict[str, bool] = {}
@@ -161,7 +164,6 @@ class MuxScheduler:
             model_name = job_config.name
             self._name_to_model[model_name] = job_config.model
             self.pipeline_parallel_size = job_config.pipeline_parallel_size
-            # self.max_num_seqs[model_name] = self.muxserve_config.max_num_seqs
             self.max_num_seqs[model_name] = job_config.max_num_seqs
             self.hist_num_seqs[model_name] = []
             assert len(job_config.mps_percentage) == 2
@@ -200,6 +202,7 @@ class MuxScheduler:
                         # self.muxserve_config.max_num_seqs,
                         job_config.max_num_seqs,
                         job_config.max_model_len,
+                        job_config.model_dtype,
                         is_prefill=is_prefill,
                         ray_address=ray_address,
                         schedule_approach=self.muxserve_config.schedule_approach)
@@ -760,7 +763,6 @@ class MuxScheduler:
 
     async def try_schedule_decoding(self, model):
         num_sm, host, port = self.estimate_mps(model, False)
-
         sm_hold_name = SM_HOLD_NAME_FMT.format(model, num_sm * 10)
         if sm_hold_name in self.running_mps:
             status = SchedStatus.RUNNING
